@@ -1,0 +1,281 @@
+library(rvest)
+library(dplyr)
+library(httr)
+library(jsonlite)
+library(lubridate)
+library(stringi)
+library(ggplot2)
+#likecount  按讚
+#commentcount  留言
+##日期
+mainurl<-"https://www.dcard.tw/service/api/v2/forums/youtuber/posts?limit=30"
+resdata <- fromJSON(content(GET(mainurl), "text"))%>%
+  select(id,title,excerpt,createdAt,commentCount,likeCount,topics)
+resdata$createdAt<-substr(resdata$createdAt, start=1,stop=10)
+resdata$createdAt<- ymd(resdata$createdAt)
+tail(select(resdata,id,title))
+end <- resdata$id[length(resdata$id)]
+
+page <- (780/30)-1
+for(i in 1:page){
+  url <- paste0(mainurl,"&before=",end)
+  print(url)
+  tmpres <- fromJSON(content(GET(url), "text"))%>%
+    select(id,title,excerpt,createdAt,commentCount,likeCount,topics)
+  tmpres$createdAt<-substr(tmpres$createdAt, start=1,stop=10)
+  tmpres$createdAt<- ymd(tmpres$createdAt)
+  end <- tmpres$id[length(tmpres$id)]
+  resdata <- bind_rows(resdata,tmpres)
+}
+
+datacount<-group_by(resdata,createdAt) %>% count() 
+datahead<-head(datacount$createdAt[order(datacount$n,decreasing = T)],5)
+datatail<-tail(datacount$createdAt[order(datacount$n,decreasing = T)],3)
+plot(datacount$createdAt,datacount$n,type='l',xaxt="n",xlab = "",ylab = "文章數",col='orange')  #xaxt="n"會把X軸的座標去除     
+axis.Date(side=1,at=c(datahead,datatail),format='%Y-%m-%d',las=2)
+abline(v=as.Date(c(datahead[1],datatail[3])),col='gray',lty=3)  #添加一條
+resdata$title[grepl(datahead[1],resdata$createdAt)]  #找到最多文章的天數
+
+word<-c("瑋瑋","反正我很閒","小玉","滴妹","老高","狠愛演","鍾明軒","球球","韓勾ㄟ")
+wword<-paste0(word, sep='|')
+hh<-data.frame(標題=resdata$title[grepl("瑋瑋|黃氏",resdata$title)],
+               時間=resdata$createdAt[grepl("瑋瑋|黃氏",resdata$title)],
+               留言數=resdata$commentCount[grepl("瑋瑋|黃氏",resdata$title)],
+               關鍵字=rep(word[1]))
+hhh<-data.frame(標題=resdata$title[grepl("瑋瑋|黃氏",resdata$excerpt)],
+                  時間=resdata$createdAt[grepl("瑋瑋|黃氏",resdata$excerpt)],
+                  留言數=resdata$commentCount[grepl("瑋瑋|黃氏",resdata$excerpt)],
+                  關鍵字=rep(word[1]))
+hhhh<-data.frame(標題=resdata$title[grepl("瑋瑋|黃氏",resdata$topics)],
+                  時間=resdata$createdAt[grepl("瑋瑋|黃氏",resdata$topics)],
+                  留言數=resdata$commentCount[grepl("瑋瑋|黃氏",resdata$topics)],
+                  關鍵字=rep(word[1]))
+hh<-unique(rbind(hh,hhh))
+hh<-unique(rbind(hh,hhhh))
+for(i in 2:length(word)){
+  try(jj<-data.frame(標題=resdata$title[grepl(word[i],resdata$title)],
+                   時間=resdata$createdAt[grepl(word[i],resdata$title)],
+                   留言數=resdata$commentCount[grepl(word[i],resdata$title)],
+                   關鍵字=rep(word[i])),silent = TRUE)
+  try(hhh<-data.frame(標題=resdata$title[grepl(word[i],resdata$excerpt)],
+                    時間=resdata$createdAt[grepl(word[i],resdata$excerpt)],
+                    留言數=resdata$commentCount[grepl(word[i],resdata$excerpt)],
+                    關鍵字=rep(word[i])),silent = TRUE)
+  try(hhhh<-data.frame(標題=resdata$title[grepl(word[i],resdata$topics)],
+                     時間=resdata$createdAt[grepl(word[i],resdata$topics)],
+                     留言數=resdata$commentCount[grepl(word[i],resdata$topics)],
+                     關鍵字=rep(word[i])),silent = TRUE)
+  try(hh<-unique(rbind(hh,jj)),silent = TRUE)
+      try(hh<-unique(rbind(hh,hhh)),silent = TRUE)
+  try(hh<-unique(rbind(hh,hhhh)),silent = TRUE)
+}
+hh<-group_by(hh,時間,關鍵字)%>%
+  summarise(留言數=sum(留言數))
+hh<-hh[!grepl("瑋瑋",hh$關鍵字),]
+ggplot(data = hh,aes(x = 時間, y = 留言數, colour = 關鍵字))+
+  scale_x_date(breaks=seq(as.Date("2020-04-20"),as.Date("2020-06-30"),10))+
+  geom_line(size=1.5)+
+  theme(axis.text.x = element_text(size = 14))+
+  theme_bw()
+
+datacomment<-group_by(resdata,createdAt) %>% summarise(comment=sum(commentCount))
+datacommenthead<-head(datacomment$createdAt[order(datacomment$comment,decreasing = T)],5)
+datacommenttail<-tail(datacount$createdAt[order(datacomment$comment,decreasing = T)],3)
+plot(datacomment$createdAt,datacomment$comment,type='l',xaxt="n",xlab = "",ylab = "留言數",col='orange')  #xaxt="n"會把X軸的座標去除     
+axis.Date(side=1,at=c(datacommenthead,datacommenttail),format='%Y-%m-%d',las=2)
+abline(v=as.Date(c(datacommenthead[1],datacommenttail[3])),col='gray',lty=3,lwd=2)  #添加一條
+abline(v=as.Date("2020-04-22"),col='red',lwd=3) #抓區間
+abline(v=as.Date("2020-06-13"),col='red',lwd=3) #抓區間
+timetitle<-filter(resdata,createdAt==as.Date("2020-04-22")) %>%
+  select(createdAt,title,topics)
+
+p<-resdata[order(resdata$commentCount,decreasing = T),]
+pp<-NULL
+for(i in 1:length(unique(cutter[p$title]))){
+  ppp<-c(unique(cutter[p$title])[i],sum(p$commentCount[grepl(unique(cutter[p$title])[i],p$title)]))
+  pp<-rbind(pp,ppp)
+}
+bb<-as.data.frame(pp)
+#bb$V2<-round(bb$V2,digits = 0)
+#pp$V2<-pp$V2[order(pp$V2,decreasing = T)]
+bb$V2<-as.numeric(pp[,2])
+bb<-bb[order(bb$V2,decreasing = T),]
+names(bb)<-c("關鍵字","留言數")
+delect<-which(stri_length(bb$關鍵字)==1)
+View(bb[-delect,])
+
+names(bb)<-c("關鍵字","留言數平均數")
+
+p<-resdata[order(resdata$commentCount,decreasing = T),]
+rr<-NULL
+for(i in 1:length(unique(cutter[p$title]))){
+  ppp<-c(unique(cutter[p$title])[i],mean(p$commentCount[grepl(unique(cutter[p$title])[i],p$title)]))
+  rr<-rbind(rr,ppp)
+}
+rrr<-as.data.frame(rr)
+#bb$V2<-round(bb$V2,digits = 0)
+#pp$V2<-pp$V2[order(pp$V2,decreasing = T)]
+rrr$V2<-as.numeric(rr[,2])
+rrr<-rrr[order(rrr$V2,decreasing = T),]
+names(rrr)<-c("關鍵字","留言數平均數")
+delect<-which(stri_length(rrr$關鍵字)==1)
+View(rrr[-delect,])
+te <-head(rrr[-delect,],20)
+te$關鍵字<-as.character(te$關鍵字)
+te$關鍵字<-as.factor(te$關鍵字)
+ggplot(te,aes(x= reorder(關鍵字,留言數平均數),y=留言數平均數))+geom_point()
+ggplot(te,aes(x=reorder(關鍵字,留言數平均數),y=留言數平均數))+
+  geom_bar(stat = "identity")+
+  coord_cartesian(ylim=c(700,1900))+
+  scale_y_continuous(breaks = seq(500,2000,250))
+  
+
+for (i in 1:as.numeric(as.Date("2020-06-13") -as.Date("2020-04-22"))) {
+  a<-filter(resdata,createdAt==as.Date("2020-04-22")+i) %>%
+    select(createdAt,title,topics)
+  for(n in 1:length(a$createdAt)){
+    timetitle<-rbind(timetitle,a[n,])
+  }
+} #區間的標題、時間、標籤
+ 
+#mixtimetitle<-resdata$title[grepl(datacommenthead[1],resdata$createdAt)]  #找到最多文章的天數
+#mixtimeexcerpt<-resdata$excerpt[grepl(datacommenthead[1],resdata$createdAt)]
+#mixtimetopics<-resdata$topics[grepl(datacommenthead[1],resdata$createdAt)] #標籤
+#######################
+#resdata$topics[[248]]
+library(jiebaR)
+cutter = worker()  ##分解字
+new_user_word(cutter,c('瑋瑋','這群人','阿滴','英文','蔡阿嘎',
+                       '阿神','聖結石','小玉','放火','Joeman',
+                       '安啾咪','魚乾','白癡公主','反骨男孩',
+                       '木曜','滴妹','在不瘋狂就等死','劉沛',
+                       '鬼鬼','超粒方','冏星人','大謙',
+                       '理科太太',"反正我很閒","黃阿瑪","愛莉莎莎",
+                       "反骨","黃氏","蛇丸","穿搭","約砲","維護",
+                       "守護","假平等","假聖人","度假","假日","假魚",
+                       "鍾明軒","鍾佳播","志祺七七","七彩的微風","七更",
+                       "安啾","瑀熙","狠愛演","雅勻","陳X昊","	陳彥婷",
+                       "谷阿莫","博恩","穿搭","木曜四超玩","How哥","蔡哥"
+                       ,"惡魔貓男","出櫃","酷炫"))
+newword<-c('瑋瑋','這群人','阿滴','英文','蔡阿嘎',
+          '阿神','聖結石','小玉','放火','Joeman',
+          '安啾咪','魚乾','白癡公主','反骨男孩',
+          '木曜','滴妹','在不瘋狂就等死','劉沛',
+          '鬼鬼','超粒方','冏星人','大謙','理科太太',
+          '黃氏兄弟',"反正我很閒","黃阿瑪","愛莉莎莎")
+paste(newword, sep='|')
+docs_segged <- NULL
+for (i in seq_along(resdata$id)) {
+  segged <- cutter[cutter[timetitle$title[i]]]
+  docs_segged[i] <- paste0(segged, collapse = " ")
+}##分解各篇標題的詞，並用空格連接
+docs_df <- tibble::tibble( ##建data.frame
+  文章編號 = seq_along(docs_segged),  ##自動編號
+  content = docs_segged
+)
+#library(tidytext)
+#library(dplyr)
+
+tidy_text_format <- docs_df %>%
+  unnest_tokens(output = "word", input = "content",
+                token = "regex", pattern = " ")  ##(pattern = " ")表示regex為" "，所以token用空白分割
+# 用空格分割文章，並1標示來自哪個文章
+a<-
+tidy_text_format %>%
+  group_by(word) %>%
+  summarise(n = n()) %>%
+  arrange(desc(n))
+#算出詞的使用量
+
+
+a<-data.table::data.table(a)
+a[grepl(c,word),sum(n),by=word]
+# 取出youtuber的名稱出現幾次
+tidy_text_format %>%
+  group_by(文章編號, word) %>%
+  summarise(n = n()) %>%  # Calculate token freq.
+  ungroup() %>% #取消分組
+  group_by(文章編號) %>% 
+  summarise(TTR = n() / sum(n))  %>%# Calculate type/token ratio 
+  View()
+#文章標題是否出現太多重複詞
+
+
+c<- paste0(newword, collapse = "|")
+
+a$word[grep(c,a$word)]
+cc<-timetitle$topics[grep(c,timetitle$topics)] ##取出標籤
+m<-NULL
+for(i in 1:length(cc)){
+  if(grepl(c,cc[[i]])!=F){
+    for(n in 1:length(as.character(strsplit(cc[[i]][grep(c,cc[[i]])]," ")))){
+      v<-as.character(strsplit(cc[[i]][grep(c,cc[[i]])]," "))[n]
+    }
+  }
+  m<-rbind(m,v)
+}
+table(m)#標籤次數
+#########################
+
+
+ 
+
+length(as.character(strsplit(cc[[1]][grep(c,cc[[1]])]," ")))
+
+
+
+api<-"https://www.dcard.tw/service/api/v2/forums/2019_ncov/posts?limit=30&before=233876263"
+b<-fromJSON(api)
+#  select(title,likeCount)
+b$createdAt<-substr(b$createdAt, start=1,stop=10)
+b$createdAt<- ymd(b$createdAt)
+datacount<-group_by(b,createdAt) %>% count() 
+
+
+
+
+
+library(jiebaR)
+cutter = worker()  ##分解字
+
+docs_segged <- NULL
+for (i in seq_along(resdata$id)) {
+  segged <- cutter[resdata$title[i]]
+  docs_segged[i] <- paste0(segged, collapse = " ")
+}
+
+
+docs_df <- tibble::tibble(
+  doc_id = seq_along(docs_segged),
+  content = docs_segged
+)
+install.packages("tidytext")
+library(tidytext)
+library(dplyr)
+
+tidy_text_format <- docs_df %>%
+  unnest_tokens(output = "word", input = "content",
+                token = "regex", pattern = " ")  # 以空白字元作為 token 分隔依據
+
+tidy_text_format %>%
+  group_by(word) %>%
+  summarise(n = n()) %>%
+  arrange(desc(n))
+
+tidy_text_format %>%
+  group_by(doc_id, word) %>%
+  summarise(n = n()) %>%  # Calculate token freq.
+  ungroup() %>%
+  group_by(doc_id) %>%
+  summarise(TTR = n() / sum(n))  # Calculate type/token ratio
+
+library(ggplot2)
+tidy_text_format %>%
+  count(word) %>%
+  mutate(word = reorder(word, n)) %>%   # 依照 n 排序文字
+  top_n(20, n) %>%                      # 取 n 排名前 10 者
+  ggplot() +
+  geom_bar(aes(word, n), stat = "identity") +
+  coord_flip()
+document_term_matrix <- dfm(quanteda_corpus)
+textplot_wordcloud(document_term_matrix)
